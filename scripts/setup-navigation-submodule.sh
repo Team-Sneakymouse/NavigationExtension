@@ -2,14 +2,15 @@
 # Link this repo into Typewriter as a git submodule (one-time setup).
 #
 # Prerequisites:
-#   1. Create an empty GitHub repo (e.g. NavigationExtension).
-#   2. Push this extension repo:
+#   1. Create an empty GitHub repo and push this extension:
 #        git remote add origin git@github.com:<org>/NavigationExtension.git
 #        git push -u origin main
-#   3. Run this script:
-#        ./scripts/setup-navigation-submodule.sh git@github.com:<org>/NavigationExtension.git
+#   2. Run from Typewriter repo root (or this script auto-detects paths):
+#        extensions/NavigationExtension/scripts/setup-navigation-submodule.sh \
+#          git@github.com:<org>/NavigationExtension.git
 #
-# After setup, commit extension work in this repo only.
+# If local and remote histories diverged (e.g. GitHub added a README), force-push
+# local main before running this script.
 
 set -euo pipefail
 
@@ -27,16 +28,22 @@ die() {
     exit 1
 }
 
+remove_extension_dir() {
+    local dir="$1"
+    if [[ ! -d "$dir" ]]; then
+        return 0
+    fi
+    # rm -rf can fail on some mounted filesystems; find -delete is more reliable.
+    find "$dir" -mindepth 1 -delete 2>/dev/null || true
+    rmdir "$dir" 2>/dev/null || rm -rf "$dir"
+}
+
 if [[ -z "$REMOTE_URL" ]]; then
     die "usage: $0 <git-remote-url>"
 fi
 
 if [[ ! -f "$TYPEWRITER_ROOT/settings.toml" ]] || [[ ! -d "$TYPEWRITER_ROOT/engine" ]]; then
     die "Typewriter root not found at $TYPEWRITER_ROOT"
-fi
-
-if [[ ! -d "$EXT_DIR/.git" ]]; then
-    die "$EXT_DIR is not a git repository"
 fi
 
 cd "$TYPEWRITER_ROOT"
@@ -48,28 +55,18 @@ fi
 
 log "Checking remote $REMOTE_URL"
 if ! git ls-remote --exit-code "$REMOTE_URL" HEAD >/dev/null 2>&1; then
-    die "cannot reach remote or repository not found — create the GitHub repo and push main first"
+    die "cannot reach remote — create the repo and push main first (use SSH URL if HTTPS gives 403)"
 fi
 
-TEMP_BACKUP="$(mktemp -d)"
-trap 'rm -rf "$TEMP_BACKUP"' EXIT
-
 if [[ -d "$EXT_DIR" ]]; then
-    log "Backing up $EXT_DIR"
-    mkdir -p "$TEMP_BACKUP/NavigationExtension"
-    rsync -a --exclude .git "$EXT_DIR/" "$TEMP_BACKUP/NavigationExtension/"
-    rm -rf "$EXT_DIR"
+    log "Removing existing $EXT_DIR (will re-clone via submodule)"
+    remove_extension_dir "$EXT_DIR"
 fi
 
 log "Adding submodule $REMOTE_URL"
 git submodule add "$REMOTE_URL" extensions/NavigationExtension
 
-if [[ -d "$TEMP_BACKUP/NavigationExtension" ]]; then
-    log "Copying local files into submodule checkout"
-    rsync -a "$TEMP_BACKUP/NavigationExtension/" "$EXT_DIR/"
-fi
-
-log "Done. Next steps:"
-echo "  cd extensions/NavigationExtension && git status"
-echo "  git add -A && git commit -m '...' && git push"
-echo "  cd $TYPEWRITER_ROOT && git add .gitmodules extensions/NavigationExtension && git commit -m 'Add NavigationExtension submodule'"
+log "Done. Commit in Typewriter parent:"
+echo "  cd $TYPEWRITER_ROOT"
+echo "  git add .gitmodules extensions/NavigationExtension"
+echo "  git commit -m 'Add NavigationExtension submodule'"
