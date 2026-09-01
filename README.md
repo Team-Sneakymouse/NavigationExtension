@@ -13,13 +13,17 @@ From the Typewriter `extensions/` directory (with this module checked out at `ex
 
 ## Dev server (Paper 26.2)
 
-Scripts live in `scripts/` and expect this repo at `extensions/NavigationExtension` inside a Typewriter checkout:
+Scripts in `scripts/` expect this repo at `extensions/NavigationExtension` inside a Typewriter checkout.
+
+The dev server builds the **local** Typewriter engine from `settings.toml` (0.9.0) so extension versions match. Web panel static files are copied from a published Typewriter build into the local plugin JAR (panel only — not the engine version).
 
 ```bash
-./scripts/dev-server.sh          # build Typewriter + extensions, start Paper
+./scripts/dev-server.sh          # build Typewriter 0.9.0 + extensions, start Paper
 ./scripts/dev-server.sh build    # build/copy plugins only
 ./scripts/dev-server.sh run      # start server (skip build)
 ```
+
+Use `DEV_SKIP_PANEL=1` if you only need in-game testing without `/connect`.
 
 One-time submodule registration (after pushing this repo to GitHub):
 

@@ -12,8 +12,7 @@
 # Environment:
 #   DEV_EXTENSIONS   comma-separated extension module names (default: Basic,RoadNetwork,Navigation)
 #   PAPER_VERSION    Paper Fill version key (default: 26.2)
-#   DEV_SKIP_PANEL     set to 1 to build local engine jar without web panel (/connect won't work)
-#   DEV_BUILD_ENGINE   set to 1 to build local engine jar instead of Modrinth download
+#   DEV_SKIP_PANEL     set to 1 to skip bundling web panel assets (/connect won't work)
 #   JAVA_HOME        Java installation to use (default: java from PATH)
 
 set -euo pipefail
@@ -161,30 +160,58 @@ path.write_text(text)
 PY
 }
 
-fetch_typewriter_plugin_with_panel() {
-    local dest="$PLUGINS_DIR/Typewriter.jar"
-    local marker="$SERVER_DIR/.typewriter-plugin-source"
-    local modrinth_url="https://cdn.modrinth.com/data/Vm7B3ymm/versions/NWX8MGts/Typewriter-0.9.0-beta-175.jar"
-    local source_key="modrinth:0.9.0-beta-175"
+read_typewriter_version() {
+    python3 - "$TYPEWRITER_ROOT/settings.toml" <<'PY'
+import sys
+import tomllib
+from pathlib import Path
 
-    if [[ -f "$marker" ]] && [[ "$(cat "$marker")" == "$source_key" ]] && [[ -f "$dest" ]]; then
-        log "Using cached Typewriter plugin ($source_key)"
-        return
+settings = tomllib.loads(Path(sys.argv[1]).read_text())
+print(settings["version"].split("-")[0])
+PY
+}
+
+merge_panel_web_assets() {
+    local dest="$PLUGINS_DIR/Typewriter.jar"
+    local cache_dir="$SERVER_DIR/.cache"
+    local donor_jar="$cache_dir/typewriter-web-donor.jar"
+    local donor_key_file="$cache_dir/typewriter-web-donor.key"
+    # Web UI only — engine version comes from the locally built Typewriter.jar.
+    local donor_url="https://cdn.modrinth.com/data/Vm7B3ymm/versions/NWX8MGts/Typewriter-0.9.0-beta-175.jar"
+    local donor_key="web-donor:0.9.0-beta-175"
+
+    mkdir -p "$cache_dir"
+
+    if [[ ! -f "$donor_key_file" ]] || [[ "$(cat "$donor_key_file")" != "$donor_key" ]] || [[ ! -f "$donor_jar" ]]; then
+        log "Downloading web panel assets (engine stays local $(read_typewriter_version))"
+        curl -fsSL -H "User-Agent: $USER_AGENT" -o "$donor_jar" "$donor_url"
+        echo "$donor_key" >"$donor_key_file"
     fi
 
-    log "Downloading Typewriter plugin with web panel from Modrinth"
-    curl -fsSL -H "User-Agent: $USER_AGENT" -o "$dest" "$modrinth_url"
-    echo "$source_key" >"$marker"
+    local tmp
+    tmp="$(mktemp -d)"
+    (cd "$tmp" && jar xf "$donor_jar" web)
+    (cd "$tmp" && jar uf "$dest" web)
+    rm -rf "$tmp"
+    log "Bundled web panel into Typewriter.jar"
 }
 
 build_typewriter_engine() {
-    if [[ "${DEV_SKIP_PANEL:-}" == "1" ]] || [[ "${DEV_BUILD_ENGINE:-}" == "1" ]]; then
-        log "Building local Typewriter engine (no bundled web panel)"
-        (cd "$TYPEWRITER_ROOT/engine" && ./gradlew :engine-paper:buildAndMove --console=plain -q)
+    local version
+    version="$(read_typewriter_version)"
+    local marker="$SERVER_DIR/.typewriter-plugin-source"
+    local source_key="local:${version}"
+
+    log "Building local Typewriter engine $version"
+    (cd "$TYPEWRITER_ROOT/engine" && ./gradlew :engine-paper:buildAndMove --console=plain -q)
+    echo "$source_key" >"$marker"
+
+    if [[ "${DEV_SKIP_PANEL:-}" == "1" ]]; then
+        log "Skipping web panel (set DEV_SKIP_PANEL=0 or unset to enable /connect)"
         return
     fi
 
-    fetch_typewriter_plugin_with_panel
+    merge_panel_web_assets
 }
 
 build_plugins() {
