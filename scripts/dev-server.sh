@@ -12,8 +12,8 @@
 # Environment:
 #   DEV_EXTENSIONS   comma-separated extension module names (default: Basic,RoadNetwork,Navigation)
 #   PAPER_VERSION    Paper Fill version key (default: 26.2)
+#   DEV_PANEL_SOURCE   local = build panel from app/ (needs Flutter); modrinth = donor JAR (default)
 #   DEV_SKIP_PANEL     set to 1 to skip bundling web panel assets (/connect won't work)
-#   JAVA_HOME        Java installation to use (default: java from PATH)
 
 set -euo pipefail
 
@@ -172,6 +172,14 @@ PY
 }
 
 merge_panel_web_assets() {
+    if [[ "${DEV_PANEL_SOURCE:-modrinth}" == "local" ]]; then
+        merge_panel_web_local
+        return
+    fi
+    merge_panel_web_modrinth
+}
+
+merge_panel_web_modrinth() {
     local dest="$PLUGINS_DIR/Typewriter.jar"
     local cache_dir="$SERVER_DIR/.cache"
     local donor_jar="$cache_dir/typewriter-web-donor.jar"
@@ -194,6 +202,29 @@ merge_panel_web_assets() {
     (cd "$tmp" && jar uf "$dest" web)
     rm -rf "$tmp"
     log "Bundled web panel into Typewriter.jar"
+}
+
+merge_panel_web_local() {
+    local dest="$PLUGINS_DIR/Typewriter.jar"
+    local app_dir="$TYPEWRITER_ROOT/app"
+    local web_dir="$app_dir/build/web"
+    local flutter_bin="${FLUTTER_ROOT:-$HOME/development/flutter}/bin/flutter"
+
+    if [[ ! -x "$flutter_bin" ]]; then
+        die "DEV_PANEL_SOURCE=local but Flutter not found at $flutter_bin (set FLUTTER_ROOT)"
+    fi
+
+    log "Building local panel web from app/ (fixes panel bugs vs Modrinth donor)"
+    (cd "$app_dir" && "$flutter_bin" pub get && "$flutter_bin" build web --no-tree-shake-icons)
+
+    [[ -d "$web_dir" ]] || die "Flutter web build missing at $web_dir"
+
+    local tmp
+    tmp="$(mktemp -d)"
+    cp -a "$web_dir" "$tmp/web"
+    (cd "$tmp" && jar uf "$dest" web)
+    rm -rf "$tmp"
+    log "Bundled local web panel into Typewriter.jar"
 }
 
 build_typewriter_engine() {

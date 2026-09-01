@@ -73,5 +73,27 @@ class StoredDestinationVariableEntryTest : FunSpec({
 
         entry.get(ctx) shouldBe stored
     }
+
+    test("returns stored value when default in variable data has empty world") {
+        val player = mockk<Player>()
+        every { player.uniqueId } returns UUID.randomUUID()
+        val entry = StoredDestinationVariableEntry(id = "dest")
+        val store = org.koin.java.KoinJavaComponent.get<DestinationStore>(DestinationStore::class.java)
+        val stored = Position(World("minecraft:overworld"), 5.0, 6.0, 7.0, 0f, 0f)
+        store.set(player, "dest", stored)
+
+        val ctx = VarContext(
+            player = player,
+            data = Generic(
+                JsonParser.parseString(
+                    """{"default":{"world":"","x":0,"y":0,"z":0,"yaw":0,"pitch":0}}"""
+                )
+            ),
+            klass = Position::class,
+            interactionContext = null
+        )
+
+        entry.get(ctx) shouldBe stored
+    }
 })
 
