@@ -12,6 +12,8 @@
 # Environment:
 #   DEV_EXTENSIONS   comma-separated extension module names (default: Basic,RoadNetwork,Navigation)
 #   PAPER_VERSION    Paper Fill version key (default: 26.2)
+#   DEV_SKIP_PANEL     set to 1 to build local engine jar without web panel (/connect won't work)
+#   DEV_BUILD_ENGINE   set to 1 to build local engine jar instead of Modrinth download
 #   JAVA_HOME        Java installation to use (default: java from PATH)
 
 set -euo pipefail
@@ -119,13 +121,76 @@ EOF
     local packetevents_url
     packetevents_url="$(fetch_packetevents_url)"
     download_file "$packetevents_url" "$PLUGINS_DIR/packetevents.jar"
+    ensure_typewriter_config
+}
+
+ensure_typewriter_config() {
+    local config="$PLUGINS_DIR/Typewriter/config.yml"
+    mkdir -p "$(dirname "$config")"
+
+    if [[ ! -f "$config" ]]; then
+        log "Creating Typewriter config with panel enabled"
+        cat >"$config" <<'EOF'
+enabled: true
+hostname: 127.0.0.1
+panel:
+  enabled: true
+  port: 8080
+websocket:
+  port: 9092
+  auth: session
+EOF
+        return
+    fi
+
+    python3 - "$config" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text()
+text = re.sub(r"^enabled:\s*false\s*$", "enabled: true", text, count=1, flags=re.MULTILINE)
+text = re.sub(
+    r"(panel:\s*\n(?:\s+.+\n)*?\s+)enabled:\s*false",
+    r"\1enabled: true",
+    text,
+    count=1,
+)
+path.write_text(text)
+PY
+}
+
+fetch_typewriter_plugin_with_panel() {
+    local dest="$PLUGINS_DIR/Typewriter.jar"
+    local marker="$SERVER_DIR/.typewriter-plugin-source"
+    local modrinth_url="https://cdn.modrinth.com/data/Vm7B3ymm/versions/NWX8MGts/Typewriter-0.9.0-beta-175.jar"
+    local source_key="modrinth:0.9.0-beta-175"
+
+    if [[ -f "$marker" ]] && [[ "$(cat "$marker")" == "$source_key" ]] && [[ -f "$dest" ]]; then
+        log "Using cached Typewriter plugin ($source_key)"
+        return
+    fi
+
+    log "Downloading Typewriter plugin with web panel from Modrinth"
+    curl -fsSL -H "User-Agent: $USER_AGENT" -o "$dest" "$modrinth_url"
+    echo "$source_key" >"$marker"
+}
+
+build_typewriter_engine() {
+    if [[ "${DEV_SKIP_PANEL:-}" == "1" ]] || [[ "${DEV_BUILD_ENGINE:-}" == "1" ]]; then
+        log "Building local Typewriter engine (no bundled web panel)"
+        (cd "$TYPEWRITER_ROOT/engine" && ./gradlew :engine-paper:buildAndMove --console=plain -q)
+        return
+    fi
+
+    fetch_typewriter_plugin_with_panel
 }
 
 build_plugins() {
     local extensions="${DEV_EXTENSIONS:-$DEFAULT_EXTENSIONS}"
 
-    log "Building Typewriter engine"
-    (cd "$TYPEWRITER_ROOT/engine" && ./gradlew :engine-paper:buildAndMove --console=plain -q)
+    build_typewriter_engine
 
     log "Building extensions: $extensions"
     IFS=',' read -ra extension_modules <<<"$extensions"
