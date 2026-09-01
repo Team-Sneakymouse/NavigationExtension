@@ -11,6 +11,22 @@ From the Typewriter `extensions/` directory (with this module checked out at `ex
 ./gradlew :NavigationExtension:buildAndMove
 ```
 
+## Dev server (Paper 26.2)
+
+Scripts live in `scripts/` and expect this repo at `extensions/NavigationExtension` inside a Typewriter checkout:
+
+```bash
+./scripts/dev-server.sh          # build Typewriter + extensions, start Paper
+./scripts/dev-server.sh build    # build/copy plugins only
+./scripts/dev-server.sh run      # start server (skip build)
+```
+
+One-time submodule registration (after pushing this repo to GitHub):
+
+```bash
+./scripts/setup-navigation-submodule.sh https://github.com/<you>/NavigationExtension.git
+```
+
 ## Wiring in Typewriter
 
 Entries provided:
